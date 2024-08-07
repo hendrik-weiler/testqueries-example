@@ -6,67 +6,55 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.inject.Inject;
-import jakarta.mail.MessagingException;
 import jakarta.mail.Session;
-import jakarta.mail.Transport;
-import jakarta.mail.internet.MimeMessage;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.*;
 import jakarta.servlet.annotation.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
+import java.util.logging.Logger;
 
 @WebServlet(name = "helloServlet", value = "/hello-servlet")
 public class HelloServlet extends HttpServlet {
 
     Connection connection = null;
 
-    private static final Logger logger = LoggerFactory.getLogger(HelloServlet.class);
+    private final static Logger logger = Logger.getLogger(HelloServlet.class.getName());
 
-    public void init() {
-        connection = SQL.init();
-    }
-
-    public class Customer {
+    public class User {
         public int id;
-        public String first_name;
+        public String username;
+        public String password;
 
-        public Customer(int id, String first_name) {
+        public User(int id, String username, String password) {
             this.id = id;
-            this.first_name = first_name;
+            this.username = username;
+            this.password = password;
         }
     }
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-
-        SQL.queryInsert("""
-           insert into customers (first_name,number_of_complaints) values ('""" + req.getParameter("first_name") + """
-        ',0)
-        """);
+        connection = SQL.init();
+        String user = req.getParameter("username");
+        String pw = req.getParameter("password");
+        String sql = String.format("insert into users values (null,'%s','%s','')", user, pw);
+        SQL.queryInsert(sql);
 
         InitialContext ic = null;
         try {
             ic = new InitialContext();
             String snName = "mail";
             Session session = (Session)ic.lookup(snName);
-            MimeMessage msg = new MimeMessage(session);
-            msg.addRecipient(MimeMessage.RecipientType.TO, new jakarta.mail.internet.InternetAddress(session.getProperty("to")));
-            msg.setSubject("New Customer");
-            msg.setContent("A new customer has been added: " + req.getParameter("first_name"), "text/plain");
-            Transport.send(msg, session.getProperty("user"), session.getProperty("password"));
-        } catch (NamingException e) {
-            throw new RuntimeException(e);
-        } catch (MessagingException e) {
+            Mail.sendMail(session.getProperty("to"), "New customer", "A new customer has been added to the database");
+        } catch (Exception e) {
             throw new RuntimeException(e);
         }
+
+        SQL.close();
 
         resp.sendRedirect(req.getContextPath() + "/hello-servlet");
     }
@@ -74,33 +62,39 @@ public class HelloServlet extends HttpServlet {
     public void doGet(HttpServletRequest request, HttpServletResponse response) throws IOException, ServletException {
         response.setContentType("text/html");
         request.setAttribute("customers_json", "[]");
+        connection = SQL.init();
+        List<User> users = new ArrayList<User>();
 
-        List<Customer> customers = new ArrayList<Customer>();
+        Object pageObj = request.getParameter("page");
+        int page = 0;
+        if(pageObj != null) {
+            page = Integer.parseInt(pageObj.toString());
+        }
+
         ResultSet set = null;
         try {
             set = SQL.querySelect("""
-                SELECT customer_id, first_name
-                FROM customers
-                ORDER BY first_name desc
-            """);
+                select *
+                from users
+                limit %d, 100;
+            """.formatted(page*100));
             while (set.next()) {
-                var ctr = new Customer(set.getInt(1),set.getString(2));
-                customers.add(ctr);
+                var ctr = new User(set.getInt(1),set.getString(2), set.getString(3));
+                users.add(ctr);
             }
-
+            
             ObjectMapper objectMapper = new ObjectMapper();
-            String jsonArray = objectMapper.writeValueAsString(customers);
+            String jsonArray = objectMapper.writeValueAsString(users);
             request.setAttribute("customers_json", jsonArray);
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
 
-        logger.info("Hello, World!");
-        request.setAttribute("customers", customers);
-        request.getRequestDispatcher("index.jsp").forward(request, response);
-    }
+        request.setAttribute("page", page);
 
-    public void destroy() {
         SQL.close();
+        logger.info("Hello, World!");
+        request.setAttribute("customers", users);
+        request.getRequestDispatcher("helloServlet.jsp").forward(request, response);
     }
 }

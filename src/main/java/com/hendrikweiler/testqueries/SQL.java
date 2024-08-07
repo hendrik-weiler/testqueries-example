@@ -18,7 +18,7 @@ public class SQL {
 
         try {
             InitialContext ctx = new InitialContext();
-            DataSource ds = (DataSource)ctx.lookup("jdbc/sales");
+            DataSource ds = (DataSource)ctx.lookup("jdbc/mariadb");
             connection = ds.getConnection();
             System.out.println("Database connected!");
             return connection;
@@ -37,17 +37,17 @@ public class SQL {
         }
     }
 
-    public static void queryInsert(String query) {
+    public static boolean queryInsert(String query) {
         try {
-            connection.prepareStatement(query).execute();
+            return connection.prepareStatement(query).execute();
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
     }
 
-    public static void queryUpdate(String query) {
+    public static int queryUpdate(String query) {
         try {
-            connection.prepareStatement(query).executeUpdate();
+            return connection.prepareStatement(query).executeUpdate();
         } catch (SQLException e) {
             throw new RuntimeException(e);
         }
